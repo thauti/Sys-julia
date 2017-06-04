@@ -149,9 +149,10 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count)
 
     if(c->placeUtilise <= 0)
     {
-        if(DEBUG)
+        if(DEBUG){
             printf("C->placeUtilise < 0 %d %d \n", c->placeUtilise, n);
-        fflush(0);
+            fflush(0);
+        }
         pthread_mutex_unlock(&c->mProtege);
 
         //_exit(-1);
