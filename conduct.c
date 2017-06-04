@@ -12,7 +12,7 @@
 #include <string.h>
 #include <pthread.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c)
 {
@@ -42,19 +42,27 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
         chk = ftruncate(fd, sizeof(struct conduct));
         if(chk == -1){
           fprintf(stderr, "Erreur lors du ftruncate de %s\n", name);
-          shm_unlink(name);
+          unlink(name);
           return NULL;
         }
         conduit =  mmap(NULL, sizeof(struct conduct), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if(conduit == MAP_FAILED){
           fprintf(stderr, "Erreur lors du mmap de %s\n", name);
-          shm_unlink(name);
+         unlink(name);
           return NULL;
         }
     }
     if(name != NULL)
     {
         conduit->filename = name;
+        int fd2;
+        fd2 = shm_open(name,  O_CREAT | O_RDWR|O_TRUNC, S_IRUSR | S_IWUSR);
+        ftruncate(fd2, c);
+        conduit->buffer = mmap(NULL, c, PROT_READ | PROT_WRITE, MAP_SHARED, fd2, 0);
+    }
+    else
+    {
+        conduit->buffer = mmap(NULL, c, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     }
     conduit->c = c;
     conduit->a = a;
@@ -63,7 +71,6 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     if(DEBUG)
         printf("Création d'un conduit de taille %d \n", c);
     conduit->eof = 0;
-    conduit->buffer = malloc(sizeof(void)*c);
     conduit->placeUtilise =0;
 
     pthread_mutex_init(&conduit->mWrite, NULL);
@@ -93,6 +100,12 @@ struct conduct *conduct_open(const char *name)
         fprintf(stderr, "Erreur lors du mmap de %s\n", name);
         return NULL;
     }
+    int fd2;
+    fd2 = shm_open(name, O_RDWR, S_IRUSR | S_IWUSR);
+    conduit->buffer = mmap(NULL, conduit->c, PROT_READ | PROT_WRITE, MAP_SHARED, fd2, 0);
+
+    //printf("Place->utilise %s", conduit->buffer);
+    fflush(0);
     return conduit;
 }
 ssize_t conduct_read(struct conduct *c, void *buf, size_t count)
