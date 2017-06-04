@@ -12,7 +12,7 @@
 #include <string.h>
 #include <pthread.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c)
 {
@@ -33,7 +33,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     {
         /* Nomme */
         int fd, chk;
-        fd = open(name, O_CREAT | O_RDWR, 0644);
+        fd = open(name, O_CREAT | O_RDWR|O_TRUNC, 0644);
         if(fd == -1)
         {
             fprintf(stderr, "Erreur lors du open de %s\n", name);
@@ -54,11 +54,12 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     }
     if(name != NULL)
     {
-        conduit->filename = name;
+        
         int fd2;
         fd2 = shm_open(name,  O_CREAT | O_RDWR|O_TRUNC, S_IRUSR | S_IWUSR);
         ftruncate(fd2, c);
         conduit->buffer = mmap(NULL, c, PROT_READ | PROT_WRITE, MAP_SHARED, fd2, 0);
+        conduit->filename = name;
     }
     else
     {
@@ -73,15 +74,23 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     conduit->eof = 0;
     conduit->placeUtilise =0;
 
-    pthread_mutex_init(&conduit->mWrite, NULL);
-    pthread_mutex_init(&conduit->mRead, NULL);
+    pthread_mutexattr_init(&conduit->mutexattr);
 
-    pthread_mutex_init(&conduit->mCondEcrit, NULL);
-    pthread_mutex_init(&conduit->mCondLire, NULL);
-    pthread_cond_init(&conduit->condLire,NULL);
-    pthread_cond_init(&conduit->condEcrit,NULL);
+    pthread_condattr_init(&conduit->condattr);
+    
+    pthread_mutexattr_setpshared(&conduit->mutexattr,  
+ 				  PTHREAD_PROCESS_SHARED);
+    pthread_condattr_setpshared(&conduit->condattr,  
+ 				  PTHREAD_PROCESS_SHARED);
+    
+    pthread_mutex_init(&conduit->mWrite, &conduit->mutexattr);
 
-    pthread_mutex_init(&conduit->mProtege, NULL);
+    pthread_mutex_init(&conduit->mCondEcrit, &conduit->mutexattr);
+    pthread_mutex_init(&conduit->mCondLire, &conduit->mutexattr);
+    pthread_cond_init(&conduit->condLire,&conduit->condattr);
+    pthread_cond_init(&conduit->condEcrit,&conduit->condattr);
+
+    pthread_mutex_init(&conduit->mProtege, &conduit->mutexattr);
     return conduit;
 }
 struct conduct *conduct_open(const char *name)
@@ -201,10 +210,10 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
     {
         //on bloque
         pthread_mutex_lock(&c->mWrite);
-        while(c->placeUtilise+count > c->c && c->eof == 0)
+        boucleecri: while(c->placeUtilise+count > c->c && c->eof == 0)
         {
             if(DEBUG)
-                printf("Attente ecriture /n");
+                printf("Attente ecriture \n");
             pthread_mutex_lock(&c->mCondLire);
             pthread_cond_wait(&c->condLire, &c->mCondLire); // On attend une lecture pour verifier la condition
             pthread_mutex_unlock(&c->mCondLire);
@@ -232,8 +241,10 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
             memcpy(c->buffer+c->pos_write, buf+i, 1); // Moche
             c->placeUtilise++;
             c->pos_write = (c->pos_write + 1) % c->c;
-            if(DEBUG)
+            if(DEBUG){
                 printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
+                fflush(0);
+            }
         }
         nbOctetEcrit = count;
         pthread_mutex_lock(&c->mCondEcrit);
@@ -322,6 +333,7 @@ void conduct_destroy(struct conduct *conduct)
         if(conduct->filename != NULL)
         {
             unlink(conduct->filename);
+            shm_unlink(conduct->filename);
         }
         conduct_close(conduct);
         munmap(conduct, sizeof(struct conduct));

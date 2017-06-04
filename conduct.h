@@ -20,6 +20,9 @@ struct conduct
     pthread_cond_t condEcrit;
     pthread_cond_t condLire;
 
+    pthread_mutexattr_t mutexattr;
+    pthread_condattr_t condattr;
+
     void* buffer; /* Taille c*/
     char* filename;
     char eof;
