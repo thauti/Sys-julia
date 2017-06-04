@@ -19,7 +19,9 @@ struct conduct
     // Variable de cond
     pthread_cond_t condEcrit;
     pthread_cond_t condLire;
-    void* buffer; /* Taille a*/
+
+    void* buffer; /* Taille c*/
+    char* filename;
     char eof;
 
 };

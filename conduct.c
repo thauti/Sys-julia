@@ -31,7 +31,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     }
     else
     {
-        /* NommÃ© */
+        /* Nomme */
         int fd, chk;
         fd = open(name, O_CREAT | O_RDWR, 0644);
         if(fd == -1)
@@ -51,6 +51,10 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
           shm_unlink(name);
           return NULL;
         }
+    }
+    if(name != NULL)
+    {
+        conduit->filename = name;
     }
     conduit->c = c;
     conduit->a = a;
@@ -297,9 +301,17 @@ int conduct_write_eof(struct conduct *c)
 }
 void conduct_close(struct conduct *conduct)
 {
-	return NULL;
+	return;
 }
 void conduct_destroy(struct conduct *conduct)
 {
-	return NULL;
+    if(conduct != NULL){
+        if(conduct->filename != NULL)
+        {
+            unlink(conduct->filename);
+        }
+        conduct_close(conduct);
+        munmap(conduct, sizeof(struct conduct));
+    }
+	return;
 }
