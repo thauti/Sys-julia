@@ -6,8 +6,9 @@ struct conduct
     /* Entre 0 et a-1*/
     int pos_read;
     int pos_write;  
-    void* buffer; /* Taille a*/
+    int placeUtilise;
 
+    
     // Mutex
     pthread_mutex_t mWrite;
     pthread_mutex_t mRead;
@@ -18,10 +19,9 @@ struct conduct
     // Variable de cond
     pthread_cond_t condEcrit;
     pthread_cond_t condLire;
-
+    void* buffer; /* Taille a*/
     char eof;
-    
-    int placeUtilise;
+
 };
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c);
