@@ -12,6 +12,7 @@
 #include <string.h>
 #include <pthread.h>
 
+#define DEBUG 0
 
 struct conduct *conduct_create(const char *name, size_t a, size_t c)
 {
@@ -19,7 +20,8 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     
     if(name == NULL)
     {
-        printf("Conduit anonyme \n");
+        if(DEBUG)
+            printf("Conduit anonyme \n");
         /* Anonyme */
         conduit =  mmap(NULL, sizeof(struct conduct), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
         if(conduit == MAP_FAILED){
@@ -54,7 +56,8 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     conduit->a = a;
     conduit->pos_read = 0;
     conduit->pos_write = 0;
-    printf("Création d'un conduit de taille %d \n", c);
+    if(DEBUG)
+        printf("Création d'un conduit de taille %d \n", c);
     conduit->eof = 0;
     conduit->buffer = malloc(sizeof(void)*c);
     conduit->placeUtilise =0;
@@ -94,6 +97,7 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count)
     pthread_mutex_lock(&c->mProtege);
     if(c->placeUtilise == 0 && c->eof == 1)
     {
+        pthread_mutex_unlock(&c->mProtege);
         return 0;
     }
     if(c->placeUtilise != 0)
@@ -110,17 +114,16 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count)
     else
     {
         pthread_mutex_unlock(&c->mProtege);
-
-        while(c->placeUtilise == 0 && c->eof == 0)
+        
+        boucle: while(c->placeUtilise == 0 && c->eof == 0)
         {
-           
-            printf("Blocage lecture \n");
+           if(DEBUG)
+                printf("Blocage lecture \n");
             pthread_mutex_lock(&c->mCondEcrit);
             pthread_cond_wait(&c->condEcrit, &c->mCondEcrit); // on attend
             pthread_mutex_unlock(&c->mCondEcrit);
         }
         pthread_mutex_lock(&c->mProtege);
-
        if(c->eof == 1)
         {
             if(c->placeUtilise == 0){
@@ -146,8 +149,13 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count)
 
     if(c->placeUtilise <= 0)
     {
-        printf("C->placeUtilise < 0 %d %d \n", c->placeUtilise, n);
-        _exit(0);
+        if(DEBUG)
+            printf("C->placeUtilise < 0 %d %d \n", c->placeUtilise, n);
+        fflush(0);
+        pthread_mutex_unlock(&c->mProtege);
+
+        //_exit(-1);
+        goto boucle;
     }
     for(j=0; j<n;j++)
     {
@@ -177,7 +185,8 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
         pthread_mutex_lock(&c->mWrite);
         while(c->placeUtilise+count > c->c && c->eof == 0)
         {
-            printf("Attente ecriture /n");
+            if(DEBUG)
+                printf("Attente ecriture /n");
             pthread_mutex_lock(&c->mCondLire);
             pthread_cond_wait(&c->condLire, &c->mCondLire); // On attend une lecture pour verifier la condition
             pthread_mutex_unlock(&c->mCondLire);
@@ -196,14 +205,17 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
         }
         //Pas beau
         int i;
-        printf("Ecriture de %d octets \n", count);
-        printf("Place : %d/%d [%d] \n", c->placeUtilise, c->c, c->a);
+        if(DEBUG){
+            printf("Ecriture de %d octets \n", count);
+            printf("Place : %d/%d [%d] \n", c->placeUtilise, c->c, c->a);
+        }
         for(i=0;i<count;i++)
         {
             memcpy(c->buffer+c->pos_write, buf+i, 1); // Moche
             c->placeUtilise++;
             c->pos_write = (c->pos_write + 1) % c->c;
-            printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
+            if(DEBUG)
+                printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
         }
         nbOctetEcrit = count;
         pthread_mutex_lock(&c->mCondEcrit);
@@ -257,17 +269,20 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
         pthread_cond_signal (&c->condEcrit); // Envoi le signal qu'on a ecrit qqchose
         nbOctetEcrit = c->a + n;
         */
-        printf("STOOOP\n");
+        if(DEBUG)
+            printf("STOOOP\n");
         return -1;
     }
 	return nbOctetEcrit;
 }
 int conduct_write_eof(struct conduct *c)
 {
-	    printf("WRITE EOF \n");
+        if(DEBUG)
+	        printf("WRITE EOF \n");
     if(c->eof == 0)
     {
-        printf("WRITE EOF EFF \n");
+        if(DEBUG)
+            printf("WRITE EOF EFF \n");
         c->eof = 1;
         // ?
         pthread_mutex_lock(&c->mCondEcrit);
