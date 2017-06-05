@@ -11,6 +11,7 @@
 #include <fcntl.h> /* For O_* constants */
 #include <string.h>
 #include <pthread.h>
+#include <errno.h>
 
 #define DEBUG 0
 
@@ -25,6 +26,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
         /* Anonyme */
         conduit =  mmap(NULL, sizeof(struct conduct), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
         if(conduit == MAP_FAILED){
+            errno = EBUSY;
           fprintf(stderr, "Erreur lors du mmap d'un tube anonyme\n");
           return NULL;
         }
@@ -36,19 +38,22 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
         fd = open(name, O_CREAT | O_RDWR|O_TRUNC, 0644);
         if(fd == -1)
         {
+            errno = EBUSY;
             fprintf(stderr, "Erreur lors du open de %s\n", name);
             return NULL;
         }
         chk = ftruncate(fd, sizeof(struct conduct));
         if(chk == -1){
+        errno = EBUSY;
           fprintf(stderr, "Erreur lors du ftruncate de %s\n", name);
           unlink(name);
           return NULL;
         }
         conduit =  mmap(NULL, sizeof(struct conduct), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if(conduit == MAP_FAILED){
-          fprintf(stderr, "Erreur lors du mmap de %s\n", name);
-         unlink(name);
+            errno = EBUSY;
+            fprintf(stderr, "Erreur lors du mmap de %s\n", name);
+            unlink(name);
           return NULL;
         }
     }
@@ -59,11 +64,23 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
         fd2 = shm_open(name,  O_CREAT | O_RDWR|O_TRUNC, S_IRUSR | S_IWUSR);
         ftruncate(fd2, c);
         conduit->buffer = mmap(NULL, c, PROT_READ | PROT_WRITE, MAP_SHARED, fd2, 0);
+        if(conduit->buffer == MAP_FAILED)
+        {
+            errno = EBUSY;
+            fprintf(stderr, "Erreur lors du mmap nomme");
+            return NULL;
+        }
         conduit->filename = name;
     }
     else
     {
         conduit->buffer = mmap(NULL, c, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        if(conduit->buffer == MAP_FAILED)
+        {
+            errno = EBUSY;
+            fprintf(stderr, "Erreur lors du mmap nomme");
+            return NULL;
+        }
     }
     conduit->c = c;
     conduit->a = a;
@@ -101,6 +118,7 @@ struct conduct *conduct_open(const char *name)
     fd = open(name, O_RDWR, 0644);  
     if(fd == -1)
     {
+        errno = ENOENT;
         fprintf(stderr, "Erreur lors du open de %s\n", name);
         return NULL;
     }
@@ -111,8 +129,20 @@ struct conduct *conduct_open(const char *name)
     }
     int fd2;
     fd2 = shm_open(name, O_RDWR, S_IRUSR | S_IWUSR);
+    if(fd2 == -1)
+    {
+        errno = EBUSY;
+        fprintf(stderr, "Erreur lors du shm_open de %s\n", name);
+        return NULL;
+    }
     conduit->buffer = mmap(NULL, conduit->c, PROT_READ | PROT_WRITE, MAP_SHARED, fd2, 0);
+    if(conduit->buffer == MAP_FAILED)
+    {
+        errno = EBUSY;
 
+        fprintf(stderr, "Erreur lors du mmap de %s\n", name);
+        return NULL;
+    }
     //printf("Place->utilise %s", conduit->buffer);
     fflush(0);
     return conduit;
@@ -204,13 +234,14 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
     int nbOctetEcrit;
     if(c->eof == 1)
     {
-        return -1; // TO DO: errno
+        errno  = EPIPE;
+        return -1; 
     }
     if(count <= c->a)
     {
         //on bloque
         pthread_mutex_lock(&c->mWrite);
-        boucleecri: while(c->placeUtilise+count > c->c && c->eof == 0)
+        while(c->placeUtilise+count > c->c && c->eof == 0)
         {
             if(DEBUG)
                 printf("Attente ecriture \n");
@@ -223,10 +254,12 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
         {
             if(c->placeUtilise == 0){
                 pthread_mutex_unlock(&c->mProtege);
+                errno  = EPIPE;
                 return 0;
             }
             else{
                 pthread_mutex_unlock(&c->mProtege);
+                errno  = EPIPE;
                 return -1;
             }
         }
@@ -255,52 +288,51 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
 
     }
     else
-    {/*
-        printf("STOOOOOOOOOOOOOOOOOP");
-        // Ecriture partielle (peut Ãªtre Ã  revoir)
-        int n;
-         //on bloque
+    {
         pthread_mutex_lock(&c->mWrite);
-        while(c->placeUtilise+c->a > c->c) // AtomicitÃ©
+
+        pthread_mutex_lock(&c->mProtege);
+
+        
+        int placeRestante;
+        placeRestante = c->c - c->placeUtilise;
+        if(c->eof == 1)
         {
-            if(c->eof == 1)
-            {
-                return -1;
-            }
-            // On attend une lecture pour verifier la condition
+        errno  = EPIPE;
+        return -1; 
         }
-        //Pas beau
-        int i;
-        for(i=0;i<c->a;i++)
+        int v;
+        if(placeRestante < count)
         {
-            memcpy(c->buffer+c->pos_write,buf+i, 1);
-            c->placeUtilise++;
-            c->pos_write = (c->pos_write + 1) % c->c;
-        }
-        pthread_mutex_unlock(&c->mWrite);
-        pthread_cond_signal (&c->condEcrit); // Envoi le signal qu'on a ecrit qqchose
-        int placeLibre;
-        placeLibre = c->c - c->placeUtilise;
-        if(placeLibre < count)
-        {
-            n = placeLibre;
+            v = placeRestante;
         }
         else
         {
-            n = count;
+            v = count;
         }
-        for(i=0;i<n;i++)
-        {
-            memcpy(c->buffer+c->pos_write,buf+i, 1);
-            c->placeUtilise++;            
-            c->pos_write = (c->pos_write + 1) % c->c;
+
+        //DEBUT MODIF
+        if(c->pos_write + v < c->c){ /*si le nombre d'octets a lire ne depasse pas la fin du buffer*/
+          memcpy(c->buffer+c->pos_write, buf, v);
+          c->placeUtilise += v;
+          c->pos_write += v;
+        } else {
+          int octetsEcrits = c->c - c->pos_write;
+          memcpy(c->buffer+c->pos_write, buf, octetsEcrits);
+          memcpy(c->buffer, buf+octetsEcrits, v-octetsEcrits);
+          c->placeUtilise += v;
+          c->pos_write = v-octetsEcrits;
         }
-        pthread_cond_signal (&c->condEcrit); // Envoi le signal qu'on a ecrit qqchose
-        nbOctetEcrit = c->a + n;
-        */
         if(DEBUG)
-            printf("STOOOP\n");
-        return -1;
+          printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
+        nbOctetEcrit = v;
+
+
+        pthread_mutex_lock(&c->mCondEcrit);
+        pthread_cond_signal (&c->condEcrit); // Envoyer le signal qu'on a ecrit qqchose
+        pthread_mutex_unlock(&c->mCondEcrit);
+        pthread_mutex_unlock(&c->mWrite);
+        pthread_mutex_unlock(&c->mProtege);
     }
 	return nbOctetEcrit;
 }
@@ -325,6 +357,16 @@ int conduct_write_eof(struct conduct *c)
 }
 void conduct_close(struct conduct *conduct)
 {
+    if(conduct != NULL){
+    if(conduct->filename != NULL){
+        munmap(conduct->buffer, conduct->c);
+        munmap(conduct, sizeof(struct conduct));
+    }
+    }
+    else
+    {
+         errno = ENXIO;
+    }
 	return;
 }
 void conduct_destroy(struct conduct *conduct)
@@ -332,11 +374,18 @@ void conduct_destroy(struct conduct *conduct)
     if(conduct != NULL){
         if(conduct->filename != NULL)
         {
+            conduct_close(conduct);
             unlink(conduct->filename);
             shm_unlink(conduct->filename);
+        }else{
+             conduct_close(conduct);
+             munmap(conduct->buffer, conduct->c);
+             munmap(conduct, sizeof(struct conduct));
         }
-        conduct_close(conduct);
-        munmap(conduct, sizeof(struct conduct));
+    }
+    else
+    {
+        errno = ENXIO;
     }
 	return;
 }
