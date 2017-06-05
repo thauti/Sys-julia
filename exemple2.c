@@ -9,17 +9,18 @@ void* ecrire(void* arg)
 {
 	struct conduct* c = (struct conduct*) arg;
 	char* str = malloc(40);
-
-	char* dest = malloc(500);
-	conduct_write(c,str,400);
+	int i = 0;
+	for(i=0;i<2;i++){
+		conduct_write(c,str,40);
+	}
+	printf("Thread Ecrivain ok \n");
 }
 void* lire(void* arg)
 {
 	struct conduct* c = (struct conduct*) arg;
 	char* str = malloc(40);
-	char* dest = malloc(500);
 	conduct_read(c,str,40);
-	printf("Thread ok");
+	printf("Thread Lecteur ok \n");
 	fflush(0);
 }
 
@@ -34,7 +35,6 @@ int main(void)
 	pthread_create(&tr, NULL, lire, (void*) c);
 	pthread_create(&tr2, NULL, lire, (void*) c);
 
-	printf("c->c %d", c->c);
 
 	pthread_join(tw, 0);
 
