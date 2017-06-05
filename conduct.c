@@ -214,13 +214,19 @@ ssize_t conduct_read(struct conduct *c, void *buf, size_t count)
         //_exit(-1);
         goto boucle;
     }
-    for(j=0; j<n;j++)
-    {
-
-        memcpy(buf+j, c->buffer+c->pos_read, 1);
-        c->placeUtilise--;
-        c->pos_read =  (c->pos_read + 1) % c->c;
+    
+    if(c->pos_read + n < c->c){ /*si le nombre d'octets a lire ne depasse pas la fin du buffer*/
+      memcpy(buf, c->buffer+c->pos_read, n);
+      c->placeUtilise -= n;
+      c->pos_read += n;
+    } else {
+      int octetsLus = c->c - c->pos_read;
+      memcpy(buf, c->buffer + c->pos_read, octetsLus);
+      memcpy(buf+octetsLus, c->buffer, n - octetsLus);
+      c->placeUtilise -= n;
+      c->pos_read = n-octetsLus;
     }
+
     pthread_mutex_unlock(&c->mProtege);
 
     pthread_mutex_lock(&c->mCondLire);
@@ -269,17 +275,23 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
             printf("Ecriture de %d octets \n", count);
             printf("Place : %d/%d [%d] \n", c->placeUtilise, c->c, c->a);
         }
-        for(i=0;i<count;i++)
-        {
-            memcpy(c->buffer+c->pos_write, buf+i, 1); // Moche
-            c->placeUtilise++;
-            c->pos_write = (c->pos_write + 1) % c->c;
-            if(DEBUG){
-                printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
-                fflush(0);
-            }
+
+        if(c->pos_write + count < c->c){
+          memcpy(c->buffer+c->pos_write, buf, count);
+          c->placeUtilise += count;
+          c->pos_write += count;
+        } else {
+          int octetsEcrits = c->c - c->pos_write;
+          memcpy(c->buffer+c->pos_write, buf, octetsEcrits);
+          memcpy(c->buffer, buf+octetsEcrits, count-octetsEcrits);
+          c->placeUtilise += count;
+          c->pos_write = count-octetsEcrits;
         }
+        if(DEBUG)
+          printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
         nbOctetEcrit = count;
+
+
         pthread_mutex_lock(&c->mCondEcrit);
         pthread_cond_signal (&c->condEcrit); // Envoyer le signal qu'on a ecrit qqchose
         pthread_mutex_unlock(&c->mCondEcrit);
