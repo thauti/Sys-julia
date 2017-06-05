@@ -17,9 +17,6 @@ int main (int argc, char *argv[])
 
 	struct conduct *c;
 
-    printf("%s", argv[1]);
-    printf("%d", src);
-    fflush(0);
     c = conduct_create("cache", 100,100);
     int l;
   

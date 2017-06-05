@@ -87,7 +87,7 @@ struct conduct *conduct_create(const char *name, size_t a, size_t c)
     conduit->pos_read = 0;
     conduit->pos_write = 0;
     if(DEBUG)
-        printf("Création d'un conduit de taille %d \n", c);
+        printf("Création d'un conduit de taille %d \n", (int)c);
     conduit->eof = 0;
     conduit->placeUtilise =0;
 
@@ -272,8 +272,8 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
         //Pas beau
         int i;
         if(DEBUG){
-            printf("Ecriture de %d octets \n", count);
-            printf("Place : %d/%d [%d] \n", c->placeUtilise, c->c, c->a);
+            printf("Ecriture de %d octets \n", (int)count);
+            printf("Place : %d/%d [%d] \n", c->placeUtilise, (int)c->c, (int)c->a);
         }
 
         if(c->pos_write + count < c->c){
@@ -288,7 +288,7 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
           c->pos_write = count-octetsEcrits;
         }
         if(DEBUG)
-          printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
+          printf("Place Utilise :  %d /  %d\n", c->placeUtilise, (int)c->c);
         nbOctetEcrit = count;
 
 
@@ -336,7 +336,7 @@ ssize_t conduct_write(struct conduct *c, const void *buf, size_t count)
           c->pos_write = v-octetsEcrits;
         }
         if(DEBUG)
-          printf("Place Utilise :  %d /  %d\n", c->placeUtilise, c->c);
+          printf("Place Utilise :  %d /  %d\n", c->placeUtilise, (int)c->c);
         nbOctetEcrit = v;
 
 
